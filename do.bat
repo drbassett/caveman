@@ -71,10 +71,11 @@ REM compiles the source code
 	set debugOptions=/MTd /Ob0 /Od /Zi
 	set releaseOptions=/MT /Ox
 	set ignoredWarnings=
+	set libraries=User32.lib
 
 	mkdir %buildDir% 2> nul
 	pushd %buildDir% > nul
-	cl.exe /Fd%projectName% /Fe%projectName% /GR- /nologo /Wall /WX /Za %ignoredWarnings% %debugOptions% ..\win32.cpp /link /INCREMENTAL:NO %libraries%
+	cl.exe /Fd%projectName% /Fe%projectName% /GR- /nologo /W4 /WX %ignoredWarnings% %debugOptions% ..\win32.cpp /link /INCREMENTAL:NO %libraries%
 	set clErr=%errorlevel%
 	popd
 EXIT /B %clErr%
