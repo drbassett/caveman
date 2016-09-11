@@ -1,5 +1,4 @@
 #include <cstdint>
-#include <windows.h>
 
 typedef int8_t i8;
 typedef uint8_t u8;
@@ -16,6 +15,12 @@ static_assert(sizeof(f32) == 4, "float type expected to occupy 4 bytes");
 typedef double f64;
 static_assert(sizeof(f64) == 8, "double type expected to occupy 8 bytes");
 
+#include "Caveman.cpp"
+
+static Application app = {};
+
+#include <windows.h>
+
 struct DimensionU16
 {
 	u16 width, height;
@@ -31,14 +36,14 @@ struct Win32Bitmap
 {
 	BITMAPINFO bmi;
 	u32 width, height, pitch;
-	u8 *buffer;
+	u8 *pixels;
 };
 
-HDC hdcMem = nullptr;
-DimensionU16 windowSize = {};
-Win32Bitmap bitmap = {};
+static HDC hdcMem = nullptr;
+static DimensionU16 windowSize = {};
+static Win32Bitmap bitmap = {};
 
-LRESULT CALLBACK windowProc(
+static LRESULT CALLBACK windowProc(
 	HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	switch (uMsg)
@@ -49,44 +54,12 @@ LRESULT CALLBACK windowProc(
 	} break;
 	case WM_PAINT:
 	{
-		if (bitmap.buffer != nullptr)
-		{
-			// fill the window with a gradient
-			auto *pBmp = bitmap.buffer;
-			for (u32 y = 0; y < bitmap.height; ++y)
-			{
-				auto pRow = pBmp;
-				for (u32 x = 0; x < bitmap.width; ++x)
-				{
-					f32 red = (f32) y / (f32) bitmap.height * 255.0f;
-					f32 green = (f32) x / (f32) bitmap.width * 255.0f; 
-					f32 blue = 0.0f;
-					f32 alpha = 0.0f;
-
-					pRow[0] = (u8) blue;
-					pRow[1] = (u8) green;
-					pRow[2] = (u8) red;
-					pRow[3] = (u8) alpha;
-					pRow += 4;
-				}
-				pBmp += bitmap.pitch;
-			}
-
-//TODO investigate if another bitmap blit function is more efficient:
-//
-//         https://msdn.microsoft.com/en-us/library/windows/desktop/dd183385(v=vs.85).aspx
-			PAINTSTRUCT ps;
-			HDC dc = BeginPaint(hwnd, &ps);
-			StretchDIBits(
-				dc,
-				0, 0, windowSize.width, windowSize.height,
-				0, 0, bitmap.width, bitmap.height,
-				bitmap.buffer,
-				&bitmap.bmi,
-				DIB_RGB_COLORS,
-				SRCCOPY);
-			EndPaint(hwnd, &ps);
-		}
+		app.drawCanvas = true;
+		// if begin/end paint is not called, Windows will keep
+		// sending out WM_PAINT messages
+		PAINTSTRUCT p;
+		BeginPaint(hwnd, &p);
+		EndPaint(hwnd, &p);
 	} break;
 	case WM_SIZE:
 	{
@@ -95,10 +68,9 @@ LRESULT CALLBACK windowProc(
 			windowSize.width = LOWORD(lParam);
 			windowSize.height = HIWORD(lParam);
 
-			if (bitmap.buffer != nullptr)
+			if (bitmap.pixels != nullptr)
 			{
-				VirtualFree(bitmap.buffer, 0, MEM_RELEASE);
-				bitmap.buffer = nullptr;
+				VirtualFree(bitmap.pixels, 0, MEM_RELEASE);
 			}
 
     		bitmap.width = windowSize.width;
@@ -117,7 +89,19 @@ LRESULT CALLBACK windowProc(
 			// rows correctly.
 			bitmap.pitch = bitmap.width * 4;
 			u32 bmpBytes = bitmap.pitch * bitmap.height;
-			bitmap.buffer = (u8*) VirtualAlloc(0, bmpBytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+			bitmap.pixels = (u8*) VirtualAlloc(0, bmpBytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+			if (bitmap.pixels == nullptr)
+			{
+//TODO could not allocate new pixels - inform the user
+				bitmap = {};
+				app.canvas = {};
+			}
+
+			app.canvas.width = bitmap.width;
+			app.canvas.height = bitmap.height;
+			app.canvas.pitch = bitmap.pitch;
+			app.canvas.pixels = bitmap.pixels;
 		}
 	} break;
 	default:
@@ -126,7 +110,7 @@ LRESULT CALLBACK windowProc(
 	return 0;
 }
 
-inline int run(HINSTANCE hInstance)
+static inline int run(HINSTANCE hInstance)
 {
 	const char *windowClassName = "Caveman Class";
 
@@ -150,6 +134,7 @@ inline int run(HINSTANCE hInstance)
 		NULL,
 		hInstance,
 		NULL);
+	HDC windowDc = GetDC(window);
 
 	if (window == nullptr)
 	{
@@ -162,6 +147,7 @@ inline int run(HINSTANCE hInstance)
 		return 1;
 	}
 
+	app.drawCanvas = true;
 	for (;;)
 	{
 		MSG message = {};
@@ -173,6 +159,27 @@ inline int run(HINSTANCE hInstance)
 			}
 			TranslateMessage(&message);
 			DispatchMessageA(&message);
+		}
+
+		update(app);
+
+		if (app.drawCanvas)
+		{
+			app.drawCanvas = false;
+			if (bitmap.pixels != nullptr)
+			{
+	//TODO investigate if another bitmap blit function is more efficient:
+	//
+	//         https://msdn.microsoft.com/en-us/library/windows/desktop/dd183385(v=vs.85).aspx
+				StretchDIBits(
+					windowDc,
+					0, 0, windowSize.width, windowSize.height,
+					0, 0, bitmap.width, bitmap.height,
+					bitmap.pixels,
+					&bitmap.bmi,
+					DIB_RGB_COLORS,
+					SRCCOPY);
+			}
 		}
 	}
 
