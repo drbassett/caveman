@@ -168,9 +168,9 @@ static inline int run(HINSTANCE hInstance)
 			app.drawCanvas = false;
 			if (bitmap.pixels != nullptr)
 			{
-	//TODO investigate if another bitmap blit function is more efficient:
-	//
-	//         https://msdn.microsoft.com/en-us/library/windows/desktop/dd183385(v=vs.85).aspx
+//TODO investigate if another bitmap blit function is more efficient:
+//
+//         https://msdn.microsoft.com/en-us/library/windows/desktop/dd183385(v=vs.85).aspx
 				StretchDIBits(
 					windowDc,
 					0, 0, windowSize.width, windowSize.height,
