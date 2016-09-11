@@ -1,4 +1,42 @@
+#include <cstdint>
 #include <windows.h>
+
+typedef int8_t i8;
+typedef uint8_t u8;
+typedef int16_t i16;
+typedef uint16_t u16;
+typedef int32_t i32;
+typedef uint32_t u32;
+typedef int64_t i64;
+typedef uint64_t u64;
+
+typedef float f32;
+static_assert(sizeof(f32) == 4, "float type expected to occupy 4 bytes");
+
+typedef double f64;
+static_assert(sizeof(f64) == 8, "double type expected to occupy 8 bytes");
+
+struct DimensionU16
+{
+	u16 width, height;
+};
+
+// Defines bitmap dimensions and a backing memory buffer. The
+// buffer is in row-major order, where the first row in the
+// buffer is drawn at the bottom of the window. The number of
+// bytes in each row is defined by the pitch, and the number
+// of pixels in each row is defined by the width. The first
+// pixel in each column is drawn on the left side of the window.
+struct Win32Bitmap
+{
+	BITMAPINFO bmi;
+	u32 width, height, pitch;
+	u8 *buffer;
+};
+
+HDC hdcMem = nullptr;
+DimensionU16 windowSize = {};
+Win32Bitmap bitmap = {};
 
 LRESULT CALLBACK windowProc(
 	HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -8,6 +46,79 @@ LRESULT CALLBACK windowProc(
 	case WM_DESTROY:
 	{
 		PostQuitMessage(0);
+	} break;
+	case WM_PAINT:
+	{
+		if (bitmap.buffer != nullptr)
+		{
+			// fill the window with a gradient
+			auto *pBmp = bitmap.buffer;
+			for (u32 y = 0; y < bitmap.height; ++y)
+			{
+				auto pRow = pBmp;
+				for (u32 x = 0; x < bitmap.width; ++x)
+				{
+					f32 red = (f32) y / (f32) bitmap.height * 255.0f;
+					f32 green = (f32) x / (f32) bitmap.width * 255.0f; 
+					f32 blue = 0.0f;
+					f32 alpha = 0.0f;
+
+					pRow[0] = (u8) blue;
+					pRow[1] = (u8) green;
+					pRow[2] = (u8) red;
+					pRow[3] = (u8) alpha;
+					pRow += 4;
+				}
+				pBmp += bitmap.pitch;
+			}
+
+//TODO investigate if another bitmap blit function is more efficient:
+//
+//         https://msdn.microsoft.com/en-us/library/windows/desktop/dd183385(v=vs.85).aspx
+			PAINTSTRUCT ps;
+			HDC dc = BeginPaint(hwnd, &ps);
+			StretchDIBits(
+				dc,
+				0, 0, windowSize.width, windowSize.height,
+				0, 0, bitmap.width, bitmap.height,
+				bitmap.buffer,
+				&bitmap.bmi,
+				DIB_RGB_COLORS,
+				SRCCOPY);
+			EndPaint(hwnd, &ps);
+		}
+	} break;
+	case WM_SIZE:
+	{
+		if (wParam == SIZE_RESTORED || wParam == SIZE_MAXIMIZED)
+		{
+			windowSize.width = LOWORD(lParam);
+			windowSize.height = HIWORD(lParam);
+
+			if (bitmap.buffer != nullptr)
+			{
+				VirtualFree(bitmap.buffer, 0, MEM_RELEASE);
+				bitmap.buffer = nullptr;
+			}
+
+    		bitmap.width = windowSize.width;
+    		bitmap.height = windowSize.height;
+
+			bitmap.bmi.bmiHeader.biSize = sizeof(bitmap.bmi.bmiHeader);
+			bitmap.bmi.bmiHeader.biWidth = bitmap.width;
+			bitmap.bmi.bmiHeader.biHeight = bitmap.height;
+			bitmap.bmi.bmiHeader.biPlanes = 1;
+			bitmap.bmi.bmiHeader.biBitCount = 32;
+			bitmap.bmi.bmiHeader.biCompression = BI_RGB;
+
+			// NOTE: Each row in the image must be aligned to a 4 byte boundary.
+			// Since we are using 4 byte pixels, we get this for free. If the
+			// pixel size changes, we may need to change the pitch to align the
+			// rows correctly.
+			bitmap.pitch = bitmap.width * 4;
+			u32 bmpBytes = bitmap.pitch * bitmap.height;
+			bitmap.buffer = (u8*) VirtualAlloc(0, bmpBytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+		}
 	} break;
 	default:
 		return DefWindowProc(hwnd, uMsg, wParam, lParam);
@@ -40,7 +151,7 @@ inline int run(HINSTANCE hInstance)
 		hInstance,
 		NULL);
 
-	if (window == NULL)
+	if (window == nullptr)
 	{
 //TODO consider using GetLastError to produce a more informative error message
 		MessageBox(

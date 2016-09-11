@@ -71,7 +71,7 @@ REM compiles the source code
 	set debugOptions=/MTd /Ob0 /Od /Zi
 	set releaseOptions=/MT /Ox
 	set ignoredWarnings=
-	set libraries=User32.lib
+	set libraries=Gdi32.lib User32.lib
 
 	mkdir %buildDir% 2> nul
 	pushd %buildDir% > nul
