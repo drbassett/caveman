@@ -35,7 +35,8 @@ struct DimensionU16
 struct Win32Bitmap
 {
 	BITMAPINFO bmi;
-	u32 width, height, pitch;
+	u32 width, height;
+	i32 pitch;
 	u8 *pixels;
 };
 
@@ -87,8 +88,8 @@ static LRESULT CALLBACK windowProc(
 			// Since we are using 4 byte pixels, we get this for free. If the
 			// pixel size changes, we may need to change the pitch to align the
 			// rows correctly.
-			bitmap.pitch = bitmap.width * 4;
-			u32 bmpBytes = bitmap.pitch * bitmap.height;
+			bitmap.pitch = (i32) (bitmap.width * 4);
+			u32 bmpBytes = bitmap.width * bitmap.height * 4;
 			bitmap.pixels = (u8*) VirtualAlloc(0, bmpBytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
 			if (bitmap.pixels == nullptr)
