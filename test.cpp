@@ -230,3 +230,53 @@ void drawTestLines(Bitmap canvas)
 	drawLine(canvas, line, color);
 }
 
+void testDrawText(const AsciiFont& font, Bitmap canvas)
+{
+	ColorU8 textColor;
+	textColor.r = 255;
+	textColor.g = 255;
+	textColor.b = 255;
+	textColor.a = 255;
+
+	// draw a variety of characters as several lines of text
+	{
+		const char *lines[] =
+		{
+			"abcdefghijklmnopqrstuvwxyz",
+			"ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+			"0123456789",
+			R"(`~!@#$%^&*()_-+={[}]:;"'<,>.?/)",
+			"The quick brown fox jumped over the lazy dog",
+		};
+
+		i32 baseline = canvas.height - 20;
+		for (u32 i = 0; i < ArrayLength(lines); ++i)
+		{
+			auto line = lines[i];
+			auto lineLength = cStringLength(line);
+			auto lineEnd = line + lineLength;
+
+			i32 leftEdge = 10;
+			drawText(font, canvas, line, lineEnd, leftEdge, baseline, textColor);
+			baseline -= font.advanceY;
+		}
+	}
+
+	{
+		auto c = 'A';
+		auto strBegin = &c;
+		auto strEnd = strBegin + 1;
+
+		i32 xMin = -5;
+		i32 yMin = -5;
+		i32 xMax = canvas.width - 5;
+		i32 yMax = canvas.height - 5;
+
+		// draw a character in each corner to test clipping
+		drawText(font, canvas, strBegin, strEnd, xMin, yMin, textColor);
+		drawText(font, canvas, strBegin, strEnd, xMin, yMax, textColor);
+		drawText(font, canvas, strBegin, strEnd, xMax, yMin, textColor);
+		drawText(font, canvas, strBegin, strEnd, xMax, yMax, textColor);
+	}
+}
+

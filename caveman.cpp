@@ -1,5 +1,11 @@
 #include <cassert>
 
+//TODO override STB's memory allocation functions
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "stb_truetype.h"
+
+#include "platform.h"
+
 #define ArrayLength(a) (sizeof(a) / sizeof(a[0]))
 
 struct RectF32
@@ -24,11 +30,88 @@ struct Bitmap
 	u8 *pixels;
 };
 
+struct GlyphMetrics
+{
+	i32 offsetTop, offsetLeft;
+	u32 advanceX;
+};
+
+struct AsciiFont
+{
+	u32 bitmapWidth, bitmapHeight;
+	u32 advanceY;
+	GlyphMetrics glyphMetrics[256];
+	u8 *bitmaps;
+};
+
 struct Application
 {
+	MemStack scratchMem;
+
 	Bitmap canvas;
 	bool drawCanvas;
+
+	AsciiFont font;
 };
+
+inline MemStack newMemStack(size_t capacity)
+{
+	MemStack m = {};
+	m.floor = (u8*) PLATFORM_alloc(capacity);
+	assert(m.floor != nullptr);
+	m.top = m.floor;
+	m.ceiling = m.floor + capacity;
+	return m;
+}
+
+inline u8* allocate(MemStack& m, size_t size)
+{
+	size_t capacity = m.ceiling - m.top;
+	if (size > capacity)
+	{
+//TODO Handle overflow. Probably want to allocate additional
+// memory. Reallocating the stack will invalidate pointers,
+// requires keeping in memory both the old and new memory chunks,
+// and could require a large data copy from the old to new memory.
+// Could create a linked list of stacks. This is a little more
+// complex to manage, but should work well. Will worry about this
+// more later, when we have a better idea of the application's
+// allocation patterns.
+//
+// Additional allocation could fail - in this case, we can either
+// tell the user to download more RAM, or close the application.
+		assert(false);
+		volatile u8 **bad = nullptr;
+		return (u8*) (*bad);
+	}
+	auto p = m.top;
+	m.top += size;
+	return p;
+}
+
+inline MemMarker mark(MemStack m)
+{
+	return MemMarker{m.top};
+}
+
+inline void release(MemStack& m, MemMarker marker)
+{
+	assert(m.top - marker._0 >= 0);
+	m.top = marker._0;
+}
+
+inline u32 roundUpPowerOf2(u32 a)
+{
+	// Thanks to the Bit Twiddling Hacks page for this:
+	// http://graphics.stanford.edu/~seander/bithacks.html#IntegerLogDeBruijn 
+	--a;
+	a |= a >> 1;
+	a |= a >> 2;
+	a |= a >> 4;
+	a |= a >> 8;
+	a |= a >> 16;
+	return a + 1;
+}
 
 inline static f32 clamp(f32 f, f32 min, f32 max)
 {
@@ -50,6 +133,16 @@ inline static void swap(i32& a, i32& b)
 	auto tmp = a;
 	a = b;
 	b = tmp;
+}
+
+inline static size_t cStringLength(const char *str)
+{
+	const char *strBegin = str;
+	while (*str != '\0')
+	{
+		++str;
+	}
+	return str - strBegin;
 }
 
 void clearBitmap(Bitmap canvas, ColorU8 color)
@@ -292,6 +385,218 @@ void drawLine(Bitmap canvas, LineF32 line, ColorU8 color)
 	}
 }
 
+void drawText(
+	const AsciiFont& font,
+	Bitmap canvas,
+	const char *strBegin,
+	const char *strEnd,
+	i32 leftEdge,
+	i32 baseline,
+	ColorU8 textColor)
+{
+	u32 bmpSize = font.bitmapWidth * font.bitmapHeight;
+	while (strBegin != strEnd)
+	{
+		char c = *strBegin;
+		++strBegin;
+
+		GlyphMetrics glyph = font.glyphMetrics[c];
+
+		i32 glyphX = leftEdge + glyph.offsetLeft;
+
+		// clip the left edge
+		i32 bmpStartCol;
+		if (glyphX < 0)
+		{
+			bmpStartCol = -glyphX;
+			glyphX = 0;
+		} else
+		{
+			bmpStartCol = 0;
+		}
+
+		// clip the right edge
+		i32 bmpEndCol;
+		if (glyphX + (i32) font.bitmapWidth >= (i32) canvas.width)
+		{
+			bmpEndCol = (i32) canvas.width - glyphX;
+		} else
+		{
+			bmpEndCol = font.bitmapWidth;
+		}
+
+		i32 glyphY = baseline - glyph.offsetTop;
+
+		// clip the bottom edge
+		i32 bmpEndRow;
+		if (glyphY < (i32) font.bitmapHeight - 1)
+		{
+			bmpEndRow = glyphY + 1;
+		} else
+		{
+			bmpEndRow = font.bitmapHeight;
+		}
+
+		// clip the top edge
+		i32 bmpStartRow;
+		if (glyphY >= (i32) canvas.height)
+		{
+			bmpStartRow = glyphY - (i32) canvas.height + 1;
+			glyphY = canvas.height - 1;
+		} else
+		{
+			bmpStartRow = 0;
+		}
+
+		auto pCanvas = canvas.pixels + canvas.pitch * glyphY;
+		auto pBmp = font.bitmaps + bmpSize * c + bmpStartRow * font.bitmapWidth;
+		for (i32 row = bmpStartRow; row < bmpEndRow; ++row)
+		{
+			auto pCanvasRow = pCanvas + 4 * glyphX;
+			auto pBmpRow = pBmp + bmpStartCol;
+			for (i32 col = bmpStartCol; col < bmpEndCol; ++col)
+			{
+				u8 alpha = *pBmpRow;
+//TODO increase the canvas bit depth for better alpha compositing
+				pCanvasRow[0] = (u8) (((u16) alpha * (u16) textColor.b + (u16) pCanvasRow[0] * (u16) (255 - alpha)) >> 8);
+				pCanvasRow[1] = (u8) (((u16) alpha * (u16) textColor.g + (u16) pCanvasRow[1] * (u16) (255 - alpha)) >> 8);
+				pCanvasRow[2] = (u8) (((u16) alpha * (u16) textColor.r + (u16) pCanvasRow[2] * (u16) (255 - alpha)) >> 8);
+//TODO compute the correct destination alpha value - it should be a combination of the canvas and text alphas
+				pCanvasRow[3] = 255;
+				pCanvasRow += 4;
+				++pBmpRow;
+			}
+			pCanvas -= canvas.pitch;
+			pBmp += font.bitmapWidth;
+		}
+
+		leftEdge += glyph.advanceX;
+	}
+}
+
+bool init(Application& app, FilePath ttfFile)
+{
+	app.drawCanvas = true;
+
+//TODO tune this allocation size
+	app.scratchMem = newMemStack(64 * 1024 * 1024);
+	if (app.scratchMem.top == nullptr)
+	{
+		assert(false);
+//TODO show error message to user
+		return false;
+	}
+
+//TODO load fonts from ttfFile;
+	{
+		bool ttfLoadSuccessful = true;
+
+		auto memMark = mark(app.scratchMem);
+
+		ReadFileError readError;
+		u8 *fileContents;
+		size_t fileSize;
+		PLATFORM_readWholeFile(
+			app.scratchMem,
+			ttfFile,
+			readError,
+			fileContents,
+			fileSize);
+		if (fileContents == nullptr)
+		{
+//TODO show error message to user
+			assert(false);
+			goto ttfLoadError;
+		}
+
+		u32 pixelsPerInch = 96;
+		u32 fontPoint = 12;
+		u32 fontPointsPerInch = 72;
+		u32 bitmapHeightPx = roundUpPowerOf2(pixelsPerInch * fontPoint / fontPointsPerInch);
+//TODO use font metrics to compute a tighter bound on the width
+		u32 bitmapWidthPx = bitmapHeightPx;
+		auto bitmapSizePx = bitmapWidthPx * bitmapHeightPx;
+
+		app.font.bitmapWidth = bitmapWidthPx;
+		app.font.bitmapHeight = bitmapHeightPx;
+
+		stbtt_fontinfo font;
+		if (!stbtt_InitFont(&font, fileContents, 0))
+		{
+//TODO show error message to user
+			assert(false);
+			goto ttfLoadError;
+		}
+
+		auto bitmapStorageSize = 256 * bitmapSizePx;
+//TODO allocate this in a different memory pool
+		app.font.bitmaps = (u8*) PLATFORM_alloc(bitmapStorageSize);
+		if (app.font.bitmaps == nullptr)
+		{
+			assert(false);
+			goto ttfLoadError;
+		}
+
+		f32 scale = stbtt_ScaleForPixelHeight(&font, (f32) bitmapHeightPx);
+		i32 ascentUnscaled, descentUnscaled, lineGapUnscaled;
+		stbtt_GetFontVMetrics(&font, &ascentUnscaled, &descentUnscaled, &lineGapUnscaled);
+		app.font.advanceY = (u32) round(((f32) ascentUnscaled - descentUnscaled + lineGapUnscaled) * scale);
+
+		u8 *nextBitmap = app.font.bitmaps;
+		u8 c = 0;
+		for (;;)
+		{
+			GlyphMetrics metrics = {};
+
+			auto glyphIndex = stbtt_FindGlyphIndex(&font, c);
+
+			stbtt_MakeGlyphBitmap(
+				&font,
+				nextBitmap,
+				bitmapWidthPx, bitmapHeightPx,
+				bitmapWidthPx,
+				scale, scale,
+				glyphIndex);
+
+			i32 advanceXUnscaled, leftOffsetUnscaled;
+			stbtt_GetGlyphHMetrics(&font, glyphIndex, &advanceXUnscaled, &leftOffsetUnscaled);
+
+			metrics.advanceX = (u32) round((f32) advanceXUnscaled * scale);
+			metrics.offsetLeft  = (i32) round((f32) leftOffsetUnscaled * scale);
+
+			stbtt_GetGlyphBitmapBox(
+				&font, glyphIndex,
+				scale, scale,
+				nullptr, &metrics.offsetTop, nullptr, nullptr);
+
+			app.font.glyphMetrics[c] = metrics;
+
+			nextBitmap += bitmapSizePx;
+
+			if (c == 255)
+			{
+				break;
+			}
+			++c;
+		}
+
+		goto ttfLoadSuccess;
+
+ttfLoadError:
+		ttfLoadSuccessful = false;
+ttfLoadSuccess:
+		release(app.scratchMem, memMark);
+		if (!ttfLoadSuccessful)
+		{
+			return false;
+		}
+	}
+
+	assert(app.scratchMem.top == app.scratchMem.floor);
+
+	return true;
+}
+
 void update(Application& app)
 {
 	// If the canvas has no area (width or height is zero), no
@@ -303,5 +608,7 @@ void update(Application& app)
 		ColorU8 background = {};
 		clearBitmap(app.canvas, background);
 	}
+
+	assert(app.scratchMem.top == app.scratchMem.floor);
 }
 
