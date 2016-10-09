@@ -280,3 +280,50 @@ void testDrawText(const AsciiFont& font, Bitmap canvas)
 	}
 }
 
+void testAddShapes(Application& app)
+{
+	ColorU8 red = {};
+	red.r = 255;
+
+	ColorU8 green = {};
+	green.g = 255;
+
+	ColorU8 blue = {};
+	blue.b = 255;
+
+	ColorU8 white = {};
+	white.r = 255;
+	white.g = 255;
+	white.b = 255;
+
+	RectF32 rect = {};
+	rect.width = 50.0f;
+	rect.height = 50.0f;
+
+	LineF32 line = {};
+
+	rect.x = 10.0f;
+	rect.y = 10.0f;
+	addRect(app, rect, red);
+
+	line.x1 = 70.0f;
+	line.y1 = 119.0f;
+	line.x2 = 119.0f;
+	line.y2 = 70.0f;
+	addLine(app, line, white);
+
+	rect.x = 70.0f;
+	rect.y = 10.0f;
+	addRect(app, rect, green);
+
+	rect.x = 10.0f;
+	rect.y = 70.0f;
+	addRect(app, rect, blue);
+
+	line.x1 = 70.0f;
+	line.y1 = 70.0f;
+	line.x2 = 119.0f;
+	line.y2 = 119.0f;
+	addLine(app, line, white);
+}
+

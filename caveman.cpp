@@ -44,6 +44,25 @@ struct AsciiFont
 	u8 *bitmaps;
 };
 
+enum struct ShapeType
+{
+	Rectangle,
+	Line,
+};
+
+struct Shape
+{
+	ColorU8 color;
+	ShapeType type;
+	union
+	{
+		RectF32 rect;
+		LineF32 line;
+	} data;
+};
+
+const u32 maxShapeCount = 1024;
+
 struct Application
 {
 	MemStack scratchMem;
@@ -52,6 +71,10 @@ struct Application
 	bool drawCanvas;
 
 	AsciiFont font;
+
+//TODO allow the capacity of the shapes array to grow
+	u32 shapeCount;
+	Shape shapes[maxShapeCount];
 };
 
 inline MemStack newMemStack(size_t capacity)
@@ -474,6 +497,36 @@ void drawText(
 	}
 }
 
+void addShape(Application& app, Shape shape)
+{
+	if (app.shapeCount == maxShapeCount)
+	{
+		assert(false);
+		return;
+	}
+
+	app.shapes[app.shapeCount] = shape;
+	++app.shapeCount;
+}
+
+void addRect(Application& app, RectF32 rect, ColorU8 color)
+{
+	Shape shape = {};
+	shape.color = color;
+	shape.type = ShapeType::Rectangle;
+	shape.data.rect = rect;
+	addShape(app, shape);
+}
+
+void addLine(Application& app, LineF32 line, ColorU8 color)
+{
+	Shape shape = {};
+	shape.color = color;
+	shape.type = ShapeType::Line;
+	shape.data.line = line;
+	addShape(app, shape);
+}
+
 bool init(Application& app, FilePath ttfFile)
 {
 	app.drawCanvas = true;
@@ -607,6 +660,21 @@ void update(Application& app)
 	{
 		ColorU8 background = {};
 		clearBitmap(app.canvas, background);
+
+		// draw all shapes
+		for (u32 i = 0; i < app.shapeCount; ++i)
+		{
+			Shape shape = app.shapes[i];
+			switch (shape.type)
+			{
+			case ShapeType::Rectangle:
+				fillRect(app.canvas, shape.data.rect, shape.color);
+				break;
+			case ShapeType::Line:
+				drawLine(app.canvas, shape.data.line, shape.color);
+				break;
+			}
+		}
 	}
 
 	assert(app.scratchMem.top == app.scratchMem.floor);
