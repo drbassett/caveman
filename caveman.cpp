@@ -67,10 +67,18 @@ struct Application
 {
 	MemStack scratchMem;
 
+	AsciiFont font;
+
+	f32 viewportX;
+	f32 viewportY;
+	// The viewportSize represents both the width and height
+	// of the viewport. The viewport is always square to prevent
+	// the rasterized image from stretching.
+//TODO prevent the viewport size from becoming negative or close zero.
+	f32 viewportSize;
+
 	Bitmap canvas;
 	bool drawCanvas;
-
-	AsciiFont font;
 
 //TODO allow the capacity of the shapes array to grow
 	u32 shapeCount;
@@ -540,7 +548,6 @@ bool init(Application& app, FilePath ttfFile)
 		return false;
 	}
 
-//TODO load fonts from ttfFile;
 	{
 		bool ttfLoadSuccessful = true;
 
@@ -645,6 +652,10 @@ ttfLoadSuccess:
 		}
 	}
 
+	app.viewportX = -1.0;
+	app.viewportY = -1.0;
+	app.viewportSize = 2.0;
+
 	assert(app.scratchMem.top == app.scratchMem.floor);
 
 	return true;
@@ -661,18 +672,41 @@ void update(Application& app)
 		ColorU8 background = {};
 		clearBitmap(app.canvas, background);
 
-		// draw all shapes
+		f32 viewportX = app.viewportX;
+		f32 viewportY = app.viewportY;
+		f32 scale = (f32) app.canvas.height / app.viewportSize;
+
+		// Draw all shapes. A shape is transformed into window
+		// space prior to drawing it.
 		for (u32 i = 0; i < app.shapeCount; ++i)
 		{
 			Shape shape = app.shapes[i];
 			switch (shape.type)
 			{
 			case ShapeType::Rectangle:
-				fillRect(app.canvas, shape.data.rect, shape.color);
-				break;
+			{
+				RectF32 rect = shape.data.rect;
+				rect.x -= viewportX;
+				rect.y -= viewportY;
+				rect.x *= scale;
+				rect.y *= scale;
+				rect.width *= scale;
+				rect.height *= scale;
+				fillRect(app.canvas, rect, shape.color);
+			} break;
 			case ShapeType::Line:
-				drawLine(app.canvas, shape.data.line, shape.color);
-				break;
+			{
+				LineF32 line = shape.data.line;
+				line.x1 -= viewportX;
+				line.y1 -= viewportY;
+				line.x2 -= viewportX;
+				line.y2 -= viewportY;
+				line.x1 *= scale;
+				line.y1 *= scale;
+				line.x2 *= scale;
+				line.y2 *= scale;
+				drawLine(app.canvas, line, shape.color);
+			} break;
 			}
 		}
 	}

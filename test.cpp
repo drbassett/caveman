@@ -297,33 +297,33 @@ void testAddShapes(Application& app)
 	white.b = 255;
 
 	RectF32 rect = {};
-	rect.width = 50.0f;
-	rect.height = 50.0f;
+	rect.width = 0.4f;
+	rect.height = 0.4f;
 
 	LineF32 line = {};
 
-	rect.x = 10.0f;
-	rect.y = 10.0f;
+	rect.x = -0.5f;
+	rect.y = -0.5f;
 	addRect(app, rect, red);
 
-	line.x1 = 70.0f;
-	line.y1 = 119.0f;
-	line.x2 = 119.0f;
-	line.y2 = 70.0f;
+	line.x1 = 0.1f;
+	line.y1 = 0.1f;
+	line.x2 = 0.5f;
+	line.y2 = 0.5f;
 	addLine(app, line, white);
 
-	rect.x = 70.0f;
-	rect.y = 10.0f;
+	rect.x = -0.5f;
+	rect.y = 0.1f;
 	addRect(app, rect, green);
 
-	rect.x = 10.0f;
-	rect.y = 70.0f;
-	addRect(app, rect, blue);
-
-	line.x1 = 70.0f;
-	line.y1 = 70.0f;
-	line.x2 = 119.0f;
-	line.y2 = 119.0f;
+	line.x1 = 0.1f;
+	line.y1 = 0.5f;
+	line.x2 = 0.5f;
+	line.y2 = 0.1f;
 	addLine(app, line, white);
+
+	rect.x = 0.1f;
+	rect.y = -0.5f;
+	addRect(app, rect, blue);
 }
 
