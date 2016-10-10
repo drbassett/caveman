@@ -198,7 +198,7 @@ static LRESULT CALLBACK windowProc(
 		case ApplicationState::PANNING:
 			break;
 		default:
-			assert(false);
+			unreachable();
 			break;
 		}
 	} break;
@@ -211,11 +211,12 @@ static LRESULT CALLBACK windowProc(
 		case ApplicationState::PANNING:
 			if (wParam == 'Q')
 			{
+				app.drawCanvas = true;
 				app.state = ApplicationState::DEFAULT;
 			}
 			break;
 		default:
-			assert(false);
+			unreachable();
 			break;
 		}
 	} break;

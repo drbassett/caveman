@@ -690,6 +690,9 @@ void update(Application& app)
 		app.viewportX += unitsPerPixel * dxPixels;
 		app.viewportY += unitsPerPixel * dyPixels;
 	} break;
+	default:
+		unreachable();
+		break;
 	}
 
 	// If the canvas has no area (width or height is zero), no
@@ -736,6 +739,49 @@ void update(Application& app)
 				line.y2 *= scale;
 				drawLine(app.canvas, line, shape.color);
 			} break;
+			default:
+				unreachable();
+				break;
+			}
+		}
+
+		// Draw help text in upper-left corner
+		{
+			const char *stateText = "";
+			switch (app.state)
+			{
+			case ApplicationState::DEFAULT:
+				stateText = "";
+				break;
+			case ApplicationState::PANNING:
+				stateText = "Panning";
+				break;
+			default:
+				unreachable();
+				break;
+			}
+
+			const char *lines[] =
+			{
+				"Hold Q: pan",
+				stateText,
+			};
+
+			ColorU8 yellow = {};
+			yellow.r = 255;
+			yellow.g = 255;
+			yellow.b = 0;
+			yellow.a = 255;
+
+			i32 baseline = app.canvas.height - app.font.advanceY;
+			for (size_t i = 0; i < ArrayLength(lines); ++i)
+			{
+				const char *line = lines[i];
+				size_t lineLength = cStringLength(line);
+				const char *lineEnd = line + lineLength;
+				i32 leftEdge = 5;
+				drawText(app.font, app.canvas, line, lineEnd, leftEdge, baseline, yellow);
+				baseline -= app.font.advanceY;
 			}
 		}
 	}
