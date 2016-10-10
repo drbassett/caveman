@@ -193,9 +193,14 @@ static LRESULT CALLBACK windowProc(
 				app.panStartY = app.mouseY;
 				app.state = ApplicationState::PANNING;
 				break;
+			case 'Z':
+				app.zoomStartY = app.mouseY;
+				app.state = ApplicationState::ZOOMING;
+				break;
 			}
 			break;
 		case ApplicationState::PANNING:
+		case ApplicationState::ZOOMING:
 			break;
 		default:
 			unreachable();
@@ -210,6 +215,13 @@ static LRESULT CALLBACK windowProc(
 			break;
 		case ApplicationState::PANNING:
 			if (wParam == 'Q')
+			{
+				app.drawCanvas = true;
+				app.state = ApplicationState::DEFAULT;
+			}
+			break;
+		case ApplicationState::ZOOMING:
+			if (wParam == 'Z')
 			{
 				app.drawCanvas = true;
 				app.state = ApplicationState::DEFAULT;

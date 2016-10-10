@@ -67,6 +67,7 @@ enum struct ApplicationState
 {
 	DEFAULT,
 	PANNING,
+	ZOOMING,
 };
 
 struct Application
@@ -94,6 +95,7 @@ struct Application
 	Shape shapes[maxShapeCount];
 
 	i32 panStartX, panStartY;
+	i32 zoomStartY;
 };
 
 inline MemStack newMemStack(size_t capacity)
@@ -546,6 +548,54 @@ void addLine(Application& app, LineF32 line, ColorU8 color)
 	addShape(app, shape);
 }
 
+//TODO this function is for testing convenience - remove it eventually
+static void addShapes(Application& app)
+{
+	ColorU8 red = {};
+	red.r = 255;
+
+	ColorU8 green = {};
+	green.g = 255;
+
+	ColorU8 blue = {};
+	blue.b = 255;
+
+	ColorU8 white = {};
+	white.r = 255;
+	white.g = 255;
+	white.b = 255;
+
+	RectF32 rect = {};
+	rect.width = 0.4f;
+	rect.height = 0.4f;
+
+	LineF32 line = {};
+
+	rect.x = -0.5f;
+	rect.y = -0.5f;
+	addRect(app, rect, red);
+
+	line.x1 = 0.1f;
+	line.y1 = 0.1f;
+	line.x2 = 0.5f;
+	line.y2 = 0.5f;
+	addLine(app, line, white);
+
+	rect.x = -0.5f;
+	rect.y = 0.1f;
+	addRect(app, rect, green);
+
+	line.x1 = 0.1f;
+	line.y1 = 0.5f;
+	line.x2 = 0.5f;
+	line.y2 = 0.1f;
+	addLine(app, line, white);
+
+	rect.x = 0.1f;
+	rect.y = -0.5f;
+	addRect(app, rect, blue);
+}
+
 bool init(Application& app, FilePath ttfFile)
 {
 	app.state = ApplicationState::DEFAULT;
@@ -668,6 +718,8 @@ ttfLoadSuccess:
 	app.viewportY = -1.0;
 	app.viewportSize = 2.0;
 
+	addShapes(app);
+
 	assert(app.scratchMem.top == app.scratchMem.floor);
 
 	return true;
@@ -681,14 +733,31 @@ void update(Application& app)
 		break;
 	case ApplicationState::PANNING:
 	{
-		app.drawCanvas = true;
-		f32 unitsPerPixel =  app.viewportSize / (f32) app.canvas.height;
+		f32 unitsPerPixel = app.viewportSize / (f32) app.canvas.height;
 		f32 dxPixels = (f32) (app.mouseX - app.panStartX);
 		f32 dyPixels = (f32) (app.mouseY - app.panStartY);
+		f32 panSpeed = 1.0f;
+		app.viewportX += panSpeed * unitsPerPixel * dxPixels;
+		app.viewportY += panSpeed * unitsPerPixel * dyPixels;
 		app.panStartX = app.mouseX;
 		app.panStartY = app.mouseY;
-		app.viewportX += unitsPerPixel * dxPixels;
-		app.viewportY += unitsPerPixel * dyPixels;
+		app.drawCanvas = true;
+	} break;
+	case ApplicationState::ZOOMING:
+	{
+//TODO zoom to cursor instead of zooming to the center of the screen
+		f32 dyPixels = (f32) (app.zoomStartY - app.mouseY);
+		f32 zoomSpeed = 0.0025f;
+		f32 oldViewportSize = app.viewportSize;
+		app.viewportSize *= (1.0f + zoomSpeed * dyPixels);
+		f32 sizeChange = app.viewportSize - oldViewportSize;
+		// Changing the viewport x/y zooms toward the center of the screen.
+		// Simply changing the viewport size zooms toward the bottom left
+		// corner, which feels unnatural.
+		app.viewportX -= 0.5f * sizeChange;
+		app.viewportY -= 0.5f * sizeChange;
+		app.zoomStartY = app.mouseY;
+		app.drawCanvas = true;
 	} break;
 	default:
 		unreachable();
@@ -751,10 +820,12 @@ void update(Application& app)
 			switch (app.state)
 			{
 			case ApplicationState::DEFAULT:
-				stateText = "";
 				break;
 			case ApplicationState::PANNING:
 				stateText = "Panning";
+				break;
+			case ApplicationState::ZOOMING:
+				stateText = "Zooming";
 				break;
 			default:
 				unreachable();
@@ -763,7 +834,8 @@ void update(Application& app)
 
 			const char *lines[] =
 			{
-				"Hold Q: pan",
+				"Hold Q: Pan",
+				"Hold Z: Zoom",
 				stateText,
 			};
 
