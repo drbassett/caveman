@@ -1,5 +1,6 @@
 #include "Caveman.cpp"
 #include <windows.h>
+#include <windowsx.h>
 
 static Application app = {};
 
@@ -179,6 +180,54 @@ static LRESULT CALLBACK windowProc(
 			app.canvas.pitch = bitmap.pitch;
 			app.canvas.pixels = bitmap.pixels;
 		}
+	} break;
+	case WM_KEYDOWN:
+	{
+		switch (app.state)
+		{
+		case ApplicationState::DEFAULT:
+			switch (wParam)
+			{
+			case 'Q':
+				app.panStartX = app.mouseX;
+				app.panStartY = app.mouseY;
+				app.state = ApplicationState::PANNING;
+				break;
+			}
+			break;
+		case ApplicationState::PANNING:
+			break;
+		default:
+			assert(false);
+			break;
+		}
+	} break;
+	case WM_KEYUP:
+	{
+		switch (app.state)
+		{
+		case ApplicationState::DEFAULT:
+			break;
+		case ApplicationState::PANNING:
+			if (wParam == 'Q')
+			{
+				app.state = ApplicationState::DEFAULT;
+			}
+			break;
+		default:
+			assert(false);
+			break;
+		}
+	} break;
+	case WM_MOUSEMOVE:
+	{
+		RECT windowRect;
+		GetClientRect(hwnd, &windowRect);
+		LONG windowHeight = windowRect.right - windowRect.left;
+
+		app.mouseX = GET_X_LPARAM(lParam);
+		// transform y coordinate so it is relative to bottom of window
+		app.mouseY = windowHeight - GET_Y_LPARAM(lParam);
 	} break;
 	default:
 		return DefWindowProc(hwnd, uMsg, wParam, lParam);

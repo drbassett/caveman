@@ -63,11 +63,20 @@ struct Shape
 
 const u32 maxShapeCount = 1024;
 
+enum struct ApplicationState
+{
+	DEFAULT,
+	PANNING,
+};
+
 struct Application
 {
 	MemStack scratchMem;
 
 	AsciiFont font;
+
+	ApplicationState state;
+	i32 mouseX, mouseY;
 
 	f32 viewportX;
 	f32 viewportY;
@@ -83,6 +92,8 @@ struct Application
 //TODO allow the capacity of the shapes array to grow
 	u32 shapeCount;
 	Shape shapes[maxShapeCount];
+
+	i32 panStartX, panStartY;
 };
 
 inline MemStack newMemStack(size_t capacity)
@@ -537,6 +548,7 @@ void addLine(Application& app, LineF32 line, ColorU8 color)
 
 bool init(Application& app, FilePath ttfFile)
 {
+	app.state = ApplicationState::DEFAULT;
 	app.drawCanvas = true;
 
 //TODO tune this allocation size
@@ -663,6 +675,23 @@ ttfLoadSuccess:
 
 void update(Application& app)
 {
+	switch (app.state)
+	{
+	case ApplicationState::DEFAULT:
+		break;
+	case ApplicationState::PANNING:
+	{
+		app.drawCanvas = true;
+		f32 unitsPerPixel =  app.viewportSize / (f32) app.canvas.height;
+		f32 dxPixels = (f32) (app.mouseX - app.panStartX);
+		f32 dyPixels = (f32) (app.mouseY - app.panStartY);
+		app.panStartX = app.mouseX;
+		app.panStartY = app.mouseY;
+		app.viewportX += unitsPerPixel * dxPixels;
+		app.viewportY += unitsPerPixel * dyPixels;
+	} break;
+	}
+
 	// If the canvas has no area (width or height is zero), no
 	// pixels can be drawn, so we can skip drawing altogether.
 	// This case also causes the line drawing algorithm to fail,
