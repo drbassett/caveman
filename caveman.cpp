@@ -96,7 +96,27 @@ struct Application
 
 	i32 panStartX, panStartY;
 	i32 zoomStartY;
+
+	bool selectShape;
+	bool shapeSelected;
+	u32 selectedShapeIndex;
 };
+
+inline f32 min(f32 a, f32 b)
+{
+	return a < b ? a : b;
+}
+
+inline f32 max(f32 a, f32 b)
+{
+	return a > b ? a : b;
+}
+
+inline f32 clamp(f32 a, f32 minVal, f32 maxVal)
+{
+	assert(minVal <= maxVal);
+	return min(max(a, minVal), maxVal);
+}
 
 inline MemStack newMemStack(size_t capacity)
 {
@@ -155,21 +175,6 @@ inline u32 roundUpPowerOf2(u32 a)
 	a |= a >> 8;
 	a |= a >> 16;
 	return a + 1;
-}
-
-inline static f32 clamp(f32 f, f32 min, f32 max)
-{
-	assert(min <= max);
-	if (f < min)
-	{
-		return min;
-	} else if (f > max)
-	{
-		return max;
-	} else
-	{
-		return f;
-	}
 }
 
 inline static void swap(i32& a, i32& b)
@@ -718,6 +723,9 @@ ttfLoadSuccess:
 	app.viewportY = -1.0;
 	app.viewportSize = 2.0;
 
+	app.selectShape = false;
+	app.shapeSelected = false;
+
 	addShapes(app);
 
 	assert(app.scratchMem.top == app.scratchMem.floor);
@@ -725,15 +733,140 @@ ttfLoadSuccess:
 	return true;
 }
 
+inline static void selectShape(Application& app)
+{
+	f32 unitsPerPixel = app.viewportSize / (f32) app.canvas.height;
+	f32 pixelsPerUnit = 1.0f / unitsPerPixel;
+	// transform the mouse position to global coordinates
+	f32 testX = ((f32) app.mouseX * unitsPerPixel) + app.viewportX;
+	f32 testY = ((f32) app.mouseY * unitsPerPixel) + app.viewportY;
+	// Shapes are drawn such that the last one is on top.
+	// Iterate through the shapes backwards so that if shapes
+	// are overlapping, the visible one is chosen.
+	u32 i = app.shapeCount;
+	while (i > 0)
+	{
+		--i;
+		Shape shape = app.shapes[i];
+		switch (shape.type)
+		{
+		case ShapeType::Rectangle:
+		{
+			RectF32 rect = shape.data.rect;
+			f32 minX = rect.x;
+			f32 maxX = minX + rect.width;
+			f32 minY = rect.y;
+			f32 maxY = minY + rect.height;
+			if (testX >= minX
+				&& testX <= maxX
+				&& testY >= minY
+				&& testY <= maxY)
+			{
+				goto hitShape;
+			}
+		} break;
+		case ShapeType::Line:
+		{
+			LineF32 line = shape.data.line;
+			f32 lineDy = line.y2 - line.y1;
+			f32 lineDx = line.x2 - line.x1;
+			f32 lineLengthSq = lineDx * lineDx + lineDy * lineDy;
+			f32 closestX, closestY;
+//TODO checking for exactly zero is not sufficient. Make this test more robust.
+			if (lineLengthSq == 0.0f)
+			{
+				// This branch is taken if the line is a single point.
+				// In this case, the x and y points are coincident, thus
+				// the closest point on the line is either one of these.
+				closestX = line.x1;
+				closestY = line.y1;
+			} else
+			{
+				// `t` represents the parameter in the parametric
+				// equation of the line
+				f32 t = ((testX - line.x1) * lineDx + (testY - line.y1) * lineDy) / lineLengthSq;
+				// clamp `t` to the endpoints of the line
+				t = clamp(t, 0.0f, 1.0f);
+				// evaluate the line equation for the closest `t` to the test point
+				closestX = line.x1 + t * lineDx;
+				closestY = line.y1 + t * lineDy;
+			}
+
+			// find the squared distance to the test point
+			f32 distSq;
+			{
+				f32 dx = closestX - testX;
+				f32 dy = closestY - testY;
+				distSq = dx * dx + dy * dy;
+			}
+
+			// distPx = dist * ppu = sqrt(distSq) * ppu
+			// distPx^2 = (sqrt(distSq) * ppu)^2 = distSq * ppu^2
+			f32 distSqPx = distSq * (pixelsPerUnit * pixelsPerUnit);
+
+			// Clicking exactly on a 1 pixel-wide line is tricky. Allow
+			// 2 pixels of slop on each side to make the task easier.
+			f32 maxDistPx = 5.0f;
+			if (distSqPx <= maxDistPx * maxDistPx)
+			{
+				goto hitShape;
+			}
+		} break;
+		default:
+			unreachable();
+		}
+	}
+	app.shapeSelected = false;
+	return;
+
+hitShape:
+	app.selectedShapeIndex = i;
+	app.shapeSelected = true;
+}
+
+// draws rectangles centered at the given points
+static void drawSelectedShapeMarkers(
+	Bitmap canvas, u32 markerCount, f32* xPx, f32* yPx)
+{
+	ColorU8 yellow = {};
+	yellow.r = 255;
+	yellow.g = 255;
+	yellow.b = 0;
+	yellow.a = 255;
+
+	f32 halfSizePx = 5.0f;
+	f32 sizePx = 2.0f * halfSizePx;
+
+	RectF32 rect = {};
+	rect.width = sizePx;
+	rect.height = sizePx;
+
+	for (u32 i = 0; i < markerCount; ++i)
+	{
+		rect.x = xPx[i] - halfSizePx;
+		rect.y = yPx[i] - halfSizePx;
+		fillRect(canvas, rect, yellow);
+	}
+}
+
 void update(Application& app)
 {
+	f32 unitsPerPixel = app.viewportSize / (f32) app.canvas.height;
+	f32 pixelsPerUnit = 1.0f / unitsPerPixel;
+
 	switch (app.state)
 	{
 	case ApplicationState::DEFAULT:
-		break;
+	{
+		if (app.selectShape)
+		{
+			app.selectShape = false;
+			selectShape(app);
+			app.drawCanvas = true;
+		}
+	} break;
 	case ApplicationState::PANNING:
 	{
-		f32 unitsPerPixel = app.viewportSize / (f32) app.canvas.height;
 		f32 dxPixels = (f32) (app.mouseX - app.panStartX);
 		f32 dyPixels = (f32) (app.mouseY - app.panStartY);
 		f32 panSpeed = 1.0f;
@@ -775,7 +908,6 @@ void update(Application& app)
 
 		f32 viewportX = app.viewportX;
 		f32 viewportY = app.viewportY;
-		f32 scale = (f32) app.canvas.height / app.viewportSize;
 
 		// Draw all shapes. A shape is transformed into window
 		// space prior to drawing it.
@@ -787,25 +919,19 @@ void update(Application& app)
 			case ShapeType::Rectangle:
 			{
 				RectF32 rect = shape.data.rect;
-				rect.x -= viewportX;
-				rect.y -= viewportY;
-				rect.x *= scale;
-				rect.y *= scale;
-				rect.width *= scale;
-				rect.height *= scale;
+				rect.x = (rect.x - viewportX) * pixelsPerUnit;
+				rect.y = (rect.y - viewportY) * pixelsPerUnit;
+				rect.width *= pixelsPerUnit;
+				rect.height *= pixelsPerUnit;
 				fillRect(app.canvas, rect, shape.color);
 			} break;
 			case ShapeType::Line:
 			{
 				LineF32 line = shape.data.line;
-				line.x1 -= viewportX;
-				line.y1 -= viewportY;
-				line.x2 -= viewportX;
-				line.y2 -= viewportY;
-				line.x1 *= scale;
-				line.y1 *= scale;
-				line.x2 *= scale;
-				line.y2 *= scale;
+				line.x1 = (line.x1 - viewportX) * pixelsPerUnit;
+				line.y1 = (line.y1 - viewportY) * pixelsPerUnit;
+				line.x2 = (line.x2 - viewportX) * pixelsPerUnit;
+				line.y2 = (line.y2 - viewportY) * pixelsPerUnit;
 				drawLine(app.canvas, line, shape.color);
 			} break;
 			default:
@@ -814,7 +940,48 @@ void update(Application& app)
 			}
 		}
 
-		// Draw help text in upper-left corner
+		// draw markers for the selected shape
+		if (app.shapeSelected)
+		{
+			Shape shape = app.shapes[app.selectedShapeIndex];
+			switch (shape.type)
+			{
+			case ShapeType::Rectangle:
+			{
+				RectF32 rect = shape.data.rect;
+				rect.x = (rect.x - viewportX) * pixelsPerUnit;
+				rect.y = (rect.y - viewportY) * pixelsPerUnit;
+				rect.width *= pixelsPerUnit;
+				rect.height *= pixelsPerUnit;
+
+				f32 minX = rect.x;
+				f32 minY = rect.y;
+				f32 maxX = minX + rect.width;
+				f32 maxY = minY + rect.height;
+
+				f32 markersX[4] = {minX, minX, maxX, maxX};
+				f32 markersY[4] = {minY, maxY, minY, maxY};
+				drawSelectedShapeMarkers(app.canvas, 4, markersX, markersY);
+			} break;
+			case ShapeType::Line:
+			{
+				LineF32 line = shape.data.line;
+				line.x1 = (line.x1 - viewportX) * pixelsPerUnit;
+				line.y1 = (line.y1 - viewportY) * pixelsPerUnit;
+				line.x2 = (line.x2 - viewportX) * pixelsPerUnit;
+				line.y2 = (line.y2 - viewportY) * pixelsPerUnit;
+
+				f32 markersX[2] = {line.x1, line.x2};
+				f32 markersY[2] = {line.y1, line.y2};
+				drawSelectedShapeMarkers(app.canvas, 2, markersX, markersY);
+			} break;
+			default:
+				unreachable();
+				break;
+			}
+		}
+
+		// draw help text in upper-left corner
 		{
 			const char *stateText = "";
 			switch (app.state)
@@ -836,6 +1003,7 @@ void update(Application& app)
 			{
 				"Hold Q: Pan",
 				"Hold Z: Zoom",
+				"S: Select shape under cursor",
 				stateText,
 			};
 

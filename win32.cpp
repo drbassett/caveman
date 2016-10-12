@@ -197,6 +197,8 @@ static LRESULT CALLBACK windowProc(
 				app.zoomStartY = app.mouseY;
 				app.state = ApplicationState::ZOOMING;
 				break;
+			case 'S':
+				app.selectShape = true;
 			}
 			break;
 		case ApplicationState::PANNING:
@@ -236,7 +238,7 @@ static LRESULT CALLBACK windowProc(
 	{
 		RECT windowRect;
 		GetClientRect(hwnd, &windowRect);
-		LONG windowHeight = windowRect.right - windowRect.left;
+		LONG windowHeight = windowRect.bottom - windowRect.top;
 
 		app.mouseX = GET_X_LPARAM(lParam);
 		// transform y coordinate so it is relative to bottom of window
