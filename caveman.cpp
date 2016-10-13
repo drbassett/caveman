@@ -5,17 +5,19 @@
 #include "stb_truetype.h"
 
 #include "platform.h"
+#include "cavemanMath.cpp"
 
 #define ArrayLength(a) (sizeof(a) / sizeof(a[0]))
 
 struct RectF32
 {
-	f32 x, y, width, height;
+	Vec2 min;
+	f32 width, height;
 };
 
 struct LineF32
 {
-	f32 x1, y1, x2, y2;
+	Vec2 p1, p2;
 };
 
 struct ColorU8
@@ -79,8 +81,7 @@ struct Application
 	ApplicationState state;
 	i32 mouseX, mouseY;
 
-	f32 viewportX;
-	f32 viewportY;
+	Vec2 viewportMin;
 	// The viewportSize represents both the width and height
 	// of the viewport. The viewport is always square to prevent
 	// the rasterized image from stretching.
@@ -217,10 +218,10 @@ void fillRect(Bitmap canvas, RectF32 rect, ColorU8 color)
 	assert(rect.width >= 0.0);
 	assert(rect.height >= 0.0);
 
-	u32 clipXMin = (u32) clamp(rect.x, 0.0f, (f32) canvas.width);
-	u32 clipXMax = (u32) clamp(rect.x + rect.width, 0.0f, (f32) canvas.width);
-	u32 clipYMin = (u32) clamp(rect.y, 0.0f, (f32) canvas.height);
-	u32 clipYMax = (u32) clamp(rect.y + rect.height, 0.0f, (f32) canvas.height);
+	u32 clipXMin = (u32) clamp(rect.min.x, 0.0f, (f32) canvas.width);
+	u32 clipXMax = (u32) clamp(rect.min.x + rect.width, 0.0f, (f32) canvas.width);
+	u32 clipYMin = (u32) clamp(rect.min.y, 0.0f, (f32) canvas.height);
+	u32 clipYMax = (u32) clamp(rect.min.y + rect.height, 0.0f, (f32) canvas.height);
 
 	auto *pPixels = canvas.pixels + clipYMin * canvas.pitch;
 	for (u32 y = clipYMin; y < clipYMax; ++y)
@@ -243,66 +244,64 @@ const u8 COHEN_SUTHERLAND_RIGHT_REGION = 0x2;
 const u8 COHEN_SUTHERLAND_BOTTOM_REGION = 0x4;
 const u8 COHEN_SUTHERLAND_TOP_REGION = 0x8;
 
-static u8 cohenSutherlandComputeRegion(
-	f32 xMin, f32 yMin, f32 xMax, f32 yMax, f32 x, f32 y)
+static u8 cohenSutherlandComputeRegion(Vec2 min, Vec2 max, Vec2 p)
 {
-	assert(xMin <= xMax);
-	assert(yMin <= yMax);
+	assert(min.x <= max.x);
+	assert(min.y <= max.y);
 
 	u8 region = 0;
-	if (x < xMin)
+	if (p.x < min.x)
 	{
 		region |= COHEN_SUTHERLAND_LEFT_REGION;
-	}
-	if (x > xMax)
+	} else if (p.x > max.x)
 	{
 		region |= COHEN_SUTHERLAND_RIGHT_REGION;
 	}
-	if (y < yMin)
+
+	if (p.y < min.y)
 	{
 		region |= COHEN_SUTHERLAND_BOTTOM_REGION;
-	}
-	if (y > yMax)
+	} else if (p.y > max.y)
 	{
 		region |= COHEN_SUTHERLAND_TOP_REGION;
 	}
+
 	return region;
 }
 
 inline static void cohenSutherlandClipPoint(
-	f32 xMin, f32 yMin, f32 xMax, f32 yMax, LineF32 line, u8& region, f32& x, f32& y)
+	Vec2 min, Vec2 max, LineF32 line, u8& region, Vec2& p)
 {
+	f32 dx = line.p2.x - line.p1.x;
+	f32 dy = line.p2.y - line.p1.y;
 	if (region & COHEN_SUTHERLAND_TOP_REGION)
 	{
-		x = line.x1 + (line.x2 - line.x1) * (yMax - line.y1) / (line.y2 - line.y1);
-		y = yMax;
+		p.x = line.p1.x + dx * (max.y - line.p1.y) / dy;
+		p.y = max.y;
 	} else if (region & COHEN_SUTHERLAND_BOTTOM_REGION)
 	{
-		x = line.x1 + (line.x2 - line.x1) * (yMin - line.y1) / (line.y2 - line.y1);
-		y = yMin;
+		p.x = line.p1.x + dx * (min.y - line.p1.y) / dy;
+		p.y = min.y;
 	} else if (region & COHEN_SUTHERLAND_RIGHT_REGION)
 	{
-		x = xMax;
-		y = line.y1 + (line.y2 - line.y1) * (xMax - line.x1) / (line.x2 - line.x1);
+		p.x = max.x;
+		p.y = line.p1.y + dy * (max.x - line.p1.x) / dx;
 	} else if (region & COHEN_SUTHERLAND_LEFT_REGION)
 	{
-		x = xMin;
-		y = line.y1 + (line.y2 - line.y1) * (xMin - line.x1) / (line.x2 - line.x1);
+		p.x = min.x;
+		p.y = line.p1.y + dy * (min.x - line.p1.x) / dx;
 	}
 
-	region = cohenSutherlandComputeRegion(xMin, yMin, xMax, yMax, x, y);
+	region = cohenSutherlandComputeRegion(min, max, p);
 }
 
-inline static bool clipLineCohenSutherland(
-	f32 xMin, f32 yMin, f32 xMax, f32 yMax, LineF32& line)
+inline static bool clipLineCohenSutherland(Vec2 min, Vec2 max, LineF32& line)
 {
-	assert(xMin <= xMax);
-	assert(yMin <= yMax);
+	assert(min.x <= max.x);
+	assert(min.y <= max.y);
 
-	u8 region1 = cohenSutherlandComputeRegion(
-		xMin, yMin, xMax, yMax, line.x1, line.y1);
-	u8 region2 = cohenSutherlandComputeRegion(
-		xMin, yMin, xMax, yMax, line.x2, line.y2);
+	u8 region1 = cohenSutherlandComputeRegion(min, max, line.p1);
+	u8 region2 = cohenSutherlandComputeRegion(min, max, line.p2);
 
 //TODO see if this loop can be unrolled - this may yield faster code
 	for (;;)
@@ -318,12 +317,10 @@ inline static bool clipLineCohenSutherland(
 		
 		if (region1 == 0)
 		{
-			cohenSutherlandClipPoint(
-				xMin, yMin, xMax, yMax, line, region2, line.x2, line.y2);
+			cohenSutherlandClipPoint(min, max, line, region2, line.p2);
 		} else
 		{
-			cohenSutherlandClipPoint(
-				xMin, yMin, xMax, yMax, line, region1, line.x1, line.y1);
+			cohenSutherlandClipPoint(min, max, line, region1, line.p1);
 		}
 	}
 }
@@ -337,18 +334,19 @@ void drawLine(Bitmap canvas, LineF32 line, ColorU8 color)
 	// memory.
 	assert(canvas.width > 0 && canvas.height > 0);
 
-	f32 maxX = (f32) (canvas.width - 1);
-	f32 maxY = (f32) (canvas.height - 1);
+//TODO inlining the min (0, 0) may yield a slightly more efficient clipping algorithm
+	Vec2 min = {0.0f, 0.0f};
+	Vec2 max = {(f32) (canvas.width - 1), (f32) (canvas.height - 1)};
 //TODO investigate the Liang-Barsky clipping algorithm
-	if (!clipLineCohenSutherland(0.0f, 0.0f, maxX, maxY, line))
+	if (!clipLineCohenSutherland(min, max, line))
 	{
 		return;
 	}
 
-	i32 x1 = (i32) line.x1;
-	i32 y1 = (i32) line.y1;
-	i32 x2 = (i32) line.x2;
-	i32 y2 = (i32) line.y2;
+	i32 x1 = (i32) line.p1.x;
+	i32 y1 = (i32) line.p1.y;
+	i32 x2 = (i32) line.p2.x;
+	i32 y2 = (i32) line.p2.y;
 
 	assert(x1 >= 0);
 	assert((u32) x1 < canvas.width);
@@ -523,6 +521,31 @@ void drawText(
 	}
 }
 
+inline Vec2 globalToPixelSpace(Vec2 viewportMin, f32 pixelsPerUnit, Vec2 v)
+{
+	return (v - viewportMin) * pixelsPerUnit;
+}
+
+inline RectF32 globalToPixelSpace(Vec2 viewportMin, f32 pixelsPerUnit, RectF32 rect)
+{
+	rect.min = globalToPixelSpace(viewportMin, pixelsPerUnit, rect.min);
+	rect.width *= pixelsPerUnit;
+	rect.height *= pixelsPerUnit;
+	return rect;
+}
+
+inline LineF32 globalToPixelSpace(Vec2 viewportMin, f32 pixelsPerUnit, LineF32 line)
+{
+	line.p1 = globalToPixelSpace(viewportMin, pixelsPerUnit, line.p1);
+	line.p2 = globalToPixelSpace(viewportMin, pixelsPerUnit, line.p2);
+	return line;
+}
+
+Vec2 pixelToGlobalSpace(Vec2 viewportMin, f32 unitsPerPixel, Vec2 v)
+{
+	return v * unitsPerPixel + viewportMin;
+}
+
 void addShape(Application& app, Shape shape)
 {
 	if (app.shapeCount == maxShapeCount)
@@ -576,28 +599,21 @@ static void addShapes(Application& app)
 
 	LineF32 line = {};
 
-	rect.x = -0.5f;
-	rect.y = -0.5f;
+	rect.min = {-0.5f, -0.5f};
 	addRect(app, rect, red);
 
-	line.x1 = 0.1f;
-	line.y1 = 0.1f;
-	line.x2 = 0.5f;
-	line.y2 = 0.5f;
+	line.p1 = {0.1f, 0.1f};
+	line.p2 = {0.5f, 0.5f};
 	addLine(app, line, white);
 
-	rect.x = -0.5f;
-	rect.y = 0.1f;
+	rect.min = {-0.5f, 0.1f};
 	addRect(app, rect, green);
 
-	line.x1 = 0.1f;
-	line.y1 = 0.5f;
-	line.x2 = 0.5f;
-	line.y2 = 0.1f;
+	line.p1 = {0.1f, 0.5f};
+	line.p2 = {0.5f, 0.1f};
 	addLine(app, line, white);
 
-	rect.x = 0.1f;
-	rect.y = -0.5f;
+	rect.min = {0.1f, -0.5f};
 	addRect(app, rect, blue);
 }
 
@@ -719,8 +735,7 @@ ttfLoadSuccess:
 		}
 	}
 
-	app.viewportX = -1.0;
-	app.viewportY = -1.0;
+	app.viewportMin = {-1.0, -1.0};
 	app.viewportSize = 2.0;
 
 	app.selectShape = false;
@@ -738,8 +753,10 @@ inline static void selectShape(Application& app)
 	f32 unitsPerPixel = app.viewportSize / (f32) app.canvas.height;
 	f32 pixelsPerUnit = 1.0f / unitsPerPixel;
 	// transform the mouse position to global coordinates
-	f32 testX = ((f32) app.mouseX * unitsPerPixel) + app.viewportX;
-	f32 testY = ((f32) app.mouseY * unitsPerPixel) + app.viewportY;
+
+	Vec2 mousePx = {(f32) app.mouseX, (f32) app.mouseY};
+	Vec2 test = unitsPerPixel * mousePx + app.viewportMin;
+
 	// Shapes are drawn such that the last one is on top.
 	// Iterate through the shapes backwards so that if shapes
 	// are overlapping, the visible one is chosen.
@@ -753,14 +770,12 @@ inline static void selectShape(Application& app)
 		case ShapeType::Rectangle:
 		{
 			RectF32 rect = shape.data.rect;
-			f32 minX = rect.x;
-			f32 maxX = minX + rect.width;
-			f32 minY = rect.y;
-			f32 maxY = minY + rect.height;
-			if (testX >= minX
-				&& testX <= maxX
-				&& testY >= minY
-				&& testY <= maxY)
+			Vec2 min = rect.min;
+			Vec2 max = min + Vec2{rect.width, rect.height};
+			if (test.x >= min.x
+				&& test.x <= max.x
+				&& test.y >= min.y
+				&& test.y <= max.y)
 			{
 				goto hitShape;
 			}
@@ -768,37 +783,28 @@ inline static void selectShape(Application& app)
 		case ShapeType::Line:
 		{
 			LineF32 line = shape.data.line;
-			f32 lineDy = line.y2 - line.y1;
-			f32 lineDx = line.x2 - line.x1;
-			f32 lineLengthSq = lineDx * lineDx + lineDy * lineDy;
-			f32 closestX, closestY;
+			Vec2 v21 = line.p2 - line.p1;
+			f32 lineLengthSq = normSq(v21);
+			Vec2 closest;
 //TODO checking for exactly zero is not sufficient. Make this test more robust.
 			if (lineLengthSq == 0.0f)
 			{
 				// This branch is taken if the line is a single point.
 				// In this case, the x and y points are coincident, thus
 				// the closest point on the line is either one of these.
-				closestX = line.x1;
-				closestY = line.y1;
+				closest = line.p1;
 			} else
 			{
 				// `t` represents the parameter in the parametric
 				// equation of the line
-				f32 t = ((testX - line.x1) * lineDx + (testY - line.y1) * lineDy) / lineLengthSq;
+				f32 t = dot(test - line.p1, v21) / lineLengthSq;
 				// clamp `t` to the endpoints of the line
 				t = clamp(t, 0.0f, 1.0f);
 				// evaluate the line equation for the closest `t` to the test point
-				closestX = line.x1 + t * lineDx;
-				closestY = line.y1 + t * lineDy;
+				closest = line.p1 + t * v21;
 			}
 
-			// find the squared distance to the test point
-			f32 distSq;
-			{
-				f32 dx = closestX - testX;
-				f32 dy = closestY - testY;
-				distSq = dx * dx + dy * dy;
-			}
+			f32 distSq = normSq(closest - test);
 
 			// distPx = dist * ppu = sqrt(distSq) * ppu
 			// distPx^2 = (sqrt(distSq) * ppu)^2 = distSq * ppu^2
@@ -826,7 +832,7 @@ hitShape:
 
 // draws rectangles centered at the given points
 static void drawSelectedShapeMarkers(
-	Bitmap canvas, u32 markerCount, f32* xPx, f32* yPx)
+	Bitmap canvas, u32 markerCount, Vec2 *pointsPx)
 {
 	ColorU8 yellow = {};
 	yellow.r = 255;
@@ -843,8 +849,7 @@ static void drawSelectedShapeMarkers(
 
 	for (u32 i = 0; i < markerCount; ++i)
 	{
-		rect.x = xPx[i] - halfSizePx;
-		rect.y = yPx[i] - halfSizePx;
+		rect.min = pointsPx[i] - Vec2{halfSizePx, halfSizePx};
 		fillRect(canvas, rect, yellow);
 	}
 }
@@ -867,11 +872,12 @@ void update(Application& app)
 	} break;
 	case ApplicationState::PANNING:
 	{
-		f32 dxPixels = (f32) (app.mouseX - app.panStartX);
-		f32 dyPixels = (f32) (app.mouseY - app.panStartY);
+		Vec2 diffPx = {
+			(f32) (app.mouseX - app.panStartX),
+			(f32) (app.mouseY - app.panStartY)};
 		f32 panSpeed = 1.0f;
-		app.viewportX += panSpeed * unitsPerPixel * dxPixels;
-		app.viewportY += panSpeed * unitsPerPixel * dyPixels;
+		Vec2 diff = (panSpeed * unitsPerPixel) * diffPx;
+		app.viewportMin += diff;
 		app.panStartX = app.mouseX;
 		app.panStartY = app.mouseY;
 		app.drawCanvas = true;
@@ -884,11 +890,11 @@ void update(Application& app)
 		f32 oldViewportSize = app.viewportSize;
 		app.viewportSize *= (1.0f + zoomSpeed * dyPixels);
 		f32 sizeChange = app.viewportSize - oldViewportSize;
+		f32 halfSizeChange = 0.5f * sizeChange;
 		// Changing the viewport x/y zooms toward the center of the screen.
 		// Simply changing the viewport size zooms toward the bottom left
 		// corner, which feels unnatural.
-		app.viewportX -= 0.5f * sizeChange;
-		app.viewportY -= 0.5f * sizeChange;
+		app.viewportMin -= Vec2{halfSizeChange, halfSizeChange};
 		app.zoomStartY = app.mouseY;
 		app.drawCanvas = true;
 	} break;
@@ -906,8 +912,7 @@ void update(Application& app)
 		ColorU8 background = {};
 		clearBitmap(app.canvas, background);
 
-		f32 viewportX = app.viewportX;
-		f32 viewportY = app.viewportY;
+		Vec2 viewportMin = app.viewportMin;
 
 		// Draw all shapes. A shape is transformed into window
 		// space prior to drawing it.
@@ -918,20 +923,14 @@ void update(Application& app)
 			{
 			case ShapeType::Rectangle:
 			{
-				RectF32 rect = shape.data.rect;
-				rect.x = (rect.x - viewportX) * pixelsPerUnit;
-				rect.y = (rect.y - viewportY) * pixelsPerUnit;
-				rect.width *= pixelsPerUnit;
-				rect.height *= pixelsPerUnit;
+				RectF32 rect = globalToPixelSpace(
+					viewportMin, pixelsPerUnit, shape.data.rect);
 				fillRect(app.canvas, rect, shape.color);
 			} break;
 			case ShapeType::Line:
 			{
-				LineF32 line = shape.data.line;
-				line.x1 = (line.x1 - viewportX) * pixelsPerUnit;
-				line.y1 = (line.y1 - viewportY) * pixelsPerUnit;
-				line.x2 = (line.x2 - viewportX) * pixelsPerUnit;
-				line.y2 = (line.y2 - viewportY) * pixelsPerUnit;
+				LineF32 line = globalToPixelSpace(
+					viewportMin, pixelsPerUnit, shape.data.line);
 				drawLine(app.canvas, line, shape.color);
 			} break;
 			default:
@@ -948,32 +947,23 @@ void update(Application& app)
 			{
 			case ShapeType::Rectangle:
 			{
-				RectF32 rect = shape.data.rect;
-				rect.x = (rect.x - viewportX) * pixelsPerUnit;
-				rect.y = (rect.y - viewportY) * pixelsPerUnit;
-				rect.width *= pixelsPerUnit;
-				rect.height *= pixelsPerUnit;
-
-				f32 minX = rect.x;
-				f32 minY = rect.y;
-				f32 maxX = minX + rect.width;
-				f32 maxY = minY + rect.height;
-
-				f32 markersX[4] = {minX, minX, maxX, maxX};
-				f32 markersY[4] = {minY, maxY, minY, maxY};
-				drawSelectedShapeMarkers(app.canvas, 4, markersX, markersY);
+				RectF32 rect = globalToPixelSpace(
+					viewportMin, pixelsPerUnit, shape.data.rect);
+				Vec2 min = rect.min;
+				Vec2 max = min + Vec2{rect.width, rect.height};
+				Vec2 markers[4] = {
+					{min.x, min.y},
+					{min.x, max.y},
+					{max.x, min.y},
+					{max.x, max.y}};
+				drawSelectedShapeMarkers(app.canvas, 4, markers);
 			} break;
 			case ShapeType::Line:
 			{
-				LineF32 line = shape.data.line;
-				line.x1 = (line.x1 - viewportX) * pixelsPerUnit;
-				line.y1 = (line.y1 - viewportY) * pixelsPerUnit;
-				line.x2 = (line.x2 - viewportX) * pixelsPerUnit;
-				line.y2 = (line.y2 - viewportY) * pixelsPerUnit;
-
-				f32 markersX[2] = {line.x1, line.x2};
-				f32 markersY[2] = {line.y1, line.y2};
-				drawSelectedShapeMarkers(app.canvas, 2, markersX, markersY);
+				LineF32 line = globalToPixelSpace(
+					viewportMin, pixelsPerUnit, shape.data.line);
+				Vec2 markers[2] = {line.p1, line.p2};
+				drawSelectedShapeMarkers(app.canvas, 2, markers);
 			} break;
 			default:
 				unreachable();

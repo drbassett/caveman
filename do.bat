@@ -70,7 +70,7 @@ REM compiles the source code
 :_compile
 	set debugOptions=/MTd /Ob0 /Od /Zi
 	set releaseOptions=/MT /Ox
-	set ignoredWarnings=
+	set ignoredWarnings=/wd4577
 	set libraries=Gdi32.lib User32.lib
 
 	mkdir %buildDir% 2> nul

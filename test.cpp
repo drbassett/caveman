@@ -44,28 +44,29 @@ void drawTestRectangles(Bitmap canvas)
 	rect.height = 100.0f;
 
 	// bottom-left corner
-	rect.x = -50.0f;
-	rect.y = -50.0f;
+	rect.min = {-50.0f, -50.0f};
 	fillRect(canvas, rect, color);
 
 	// top-left corner
-	rect.x = -50.0f;
-	rect.y = canvas.height - rect.height + 50.0f;
+	rect.min = {
+		-50.0f,
+		canvas.height - rect.height + 50.0f};
 	fillRect(canvas, rect, color);
 
 	// top-right corner
-	rect.x = canvas.width - rect.width + 50.0f;
-	rect.y = canvas.height - rect.height + 50.0f;
+	rect.min = {
+		canvas.width - rect.width + 50.0f,
+		canvas.height - rect.height + 50.0f};
 	fillRect(canvas, rect, color);
 
 	// bottom-right corner
-	rect.x = canvas.width - rect.width + 50.0f;
-	rect.y = -50.0;
+	rect.min = {
+		canvas.width - rect.width + 50.0f,
+		-50.0};
 	fillRect(canvas, rect, color);
 
 	// zero-area rectangle
-	rect.x = 0.0f;
-	rect.y = 0.0f;
+	rect.min = {0.0f, 0.0f};
 	rect.width = 0.0f;
 	rect.height = 0.0f;
 	fillRect(canvas, rect, color);
@@ -82,45 +83,33 @@ void drawTestLines(Bitmap canvas)
 	LineF32 line = {};
 
 	// bottom-left to top-right corner
-	line.x1 = 0.0f;
-	line.y1 = 0.0f;
-	line.x2 = canvas.width - 1.0f;
-	line.y2 = canvas.height - 1.0f;
+	line.p1 = {0.0f, 0.0f};
+	line.p2 = {canvas.width - 1.0f, canvas.height - 1.0f};
 	drawLine(canvas, line, color);
 
 	// top-left to bottom-right corner
-	line.x1 = 0.0f;
-	line.y1 = canvas.height - 1.0f;
-	line.x2 = canvas.width - 1.0f;
-	line.y2 = 0.0f;
+	line.p1 = {0.0f, canvas.height - 1.0f};
+	line.p2 = {canvas.width - 1.0f, 0.0f};
 	drawLine(canvas, line, color);
 
 	// along the left edge
-	line.x1 = 0.0f;
-	line.y1 = 0.0f;
-	line.x2 = 0.0f;
-	line.y2 = canvas.height - 1.0f;
+	line.p1 = {0.0f, 0.0f};
+	line.p2 = {0.0f, canvas.height - 1.0f};
 	drawLine(canvas, line, color);
 
 	// along the right edge
-	line.x1 = canvas.width - 1.0f;
-	line.y1 = 0.0f;
-	line.x2 = canvas.width - 1.0f;
-	line.y2 = canvas.height - 1.0f;
+	line.p1 = {canvas.width - 1.0f, 0.0f};
+	line.p2 = {canvas.width - 1.0f, canvas.height - 1.0f};
 	drawLine(canvas, line, color);
 	
 	// along the bottom edge
-	line.x1 = 0.0f;
-	line.y1 = 0.0f;
-	line.x2 = canvas.width - 1.0f;
-	line.y2 = 0.0f;
+	line.p1 = {0.0f, 0.0f};
+	line.p2 = {canvas.width - 1.0f, 0.0f};
 	drawLine(canvas, line, color);
 
 	// along the top edge
-	line.x1 = 0.0f;
-	line.y1 = canvas.height - 1.0f;
-	line.x2 = canvas.width - 1.0f;
-	line.y2 = canvas.height - 1.0f;
+	line.p1 = {0.0f, canvas.height - 1.0f};
+	line.p2 = {canvas.width - 1.0f, canvas.height - 1.0f};
 	drawLine(canvas, line, color);
 
 	auto canvasWidth = (f32) canvas.width;
@@ -134,99 +123,80 @@ void drawTestLines(Bitmap canvas)
 	color.a = 0;
 
 	// between clip regions
-	f32 points[] =
+	Vec2 points[] =
 	{
-		-50.0f, -50.0f,
-		-50.0f, halfCanvasHeight,
-		-50.0f, canvasHeight + 50.0f,
+		{-50.0f, -50.0f},
+		{-50.0f, halfCanvasHeight},
+		{-50.0f, canvasHeight + 50.0f},
 
-		halfCanvasWidth, -50.0f,
-		halfCanvasWidth, halfCanvasHeight,
-		halfCanvasWidth, canvasHeight + 50.0f,
+		{halfCanvasWidth, -50.0f},
+		{halfCanvasWidth, halfCanvasHeight},
+		{halfCanvasWidth, canvasHeight + 50.0f},
 
-		canvasWidth + 50.0f, -50.0f,
-		canvasWidth + 50.0f, halfCanvasHeight,
-		canvasWidth + 50.0f, canvasHeight + 50.0f,
+		{canvasWidth + 50.0f, -50.0f},
+		{canvasWidth + 50.0f, halfCanvasHeight},
+		{canvasWidth + 50.0f, canvasHeight + 50.0f},
 	};
-	for (u32 i = 0; i < ArrayLength(points); i += 2)
+	for (u32 i = 0; i < ArrayLength(points); ++i)
 	{
-		line.x1 = points[i];
-		line.y1 = points[i + 1];
+		line.p1 = points[i];
 
-		for (u32 j = 0; j < i; j += 2)
+		for (u32 j = 0; j < i; ++j)
 		{
-			line.x2 = points[j];
-			line.y2 = points[j + 1];
+			line.p2 = points[j];
 			drawLine(canvas, line, color);
 		}
 
-		for (u32 j = i + 2; j < ArrayLength(points); j += 2)
+		for (u32 j = i + 1; j < ArrayLength(points); ++j)
 		{
+			line.p2 = points[j];
 			drawLine(canvas, line, color);
 		}
 	}
 
 	// southwest clip region
-	line.x1 = -10.0f;
-	line.y1 = -10.0f;
-	line.x2 = -20.0f;
-	line.y2 = -20.0f;
+	line.p1 = {-10.0f, -10.0f};
+	line.p2 = {-20.0f, -20.0f};
 	drawLine(canvas, line, color);
 
 	// west clip region
-	line.x1 = -10.0f;
-	line.y1 = halfCanvasHeight;
-	line.x2 = -20.0f;
-	line.y2 = halfCanvasHeight;
+	line.p1 = {-10.0f, halfCanvasHeight};
+	line.p2 = {-20.0f, halfCanvasHeight};
 	drawLine(canvas, line, color);
 
 	// northwest clip region
-	line.x1 = -10.0f;
-	line.y1 = canvasHeight + 10.0f;
-	line.x2 = -20.0f;
-	line.y2 = canvasHeight + 20.0f;
+	line.p1 = {-10.0f, canvasHeight + 10.0f};
+	line.p2 = {-20.0f, canvasHeight + 20.0f};
 	drawLine(canvas, line, color);
 
 	// north clip region
-	line.x1 = canvasWidth;
-	line.y1 = canvasHeight + 10.0f;
-	line.x2 = canvasWidth;
-	line.y2 = canvasHeight + 20.0f;
+	line.p1 = {canvasWidth, canvasHeight + 10.0f};
+	line.p2 = {canvasWidth, canvasHeight + 20.0f};
 	drawLine(canvas, line, color);
 
 	// northeast clip region
-	line.x1 = canvasWidth + 10.0f;
-	line.y1 = canvasHeight + 10.0f;
-	line.x2 = canvasWidth + 20.0f;
-	line.y2 = canvasHeight + 20.0f;
+	line.p1 = {canvasWidth + 10.0f, canvasHeight + 10.0f};
+	line.p2 = {canvasWidth + 20.0f, canvasHeight + 20.0f};
 	drawLine(canvas, line, color);
 
 	// east clip region
-	line.x1 = canvasWidth + 10.0f;
-	line.y1 = halfCanvasHeight;
-	line.x2 = canvasWidth + 20.0f;
-	line.y2 = halfCanvasHeight;
+	line.p1 = {canvasWidth + 10.0f, halfCanvasHeight};
+	line.p2 = {canvasWidth + 20.0f, halfCanvasHeight};
 	drawLine(canvas, line, color);
 
 	// southeast clip region
-	line.x1 = canvasWidth + 10.0f;
-	line.y1 = -10.0f;
-	line.x2 = canvasWidth + 20.0f;
-	line.y2 = -20.0f;
+	line.p1 = {canvasWidth + 10.0f, -10.0f};
+	line.p2 = {canvasWidth + 20.0f, -20.0f};
 	drawLine(canvas, line, color);
 
 	// south clip region
-	line.x1 = halfCanvasWidth;
-	line.y1 = -10.0f;
-	line.x2 = halfCanvasWidth;
-	line.y2 = -20.0f;
+	line.p1 = {halfCanvasWidth, -10.0f};
+	line.p2 = {halfCanvasWidth, -20.0f};
 	drawLine(canvas, line, color);
 
 	// zero-length line
-	line.x1 = 0.0f;
-	line.y1 = 0.0f;
-	line.x2 = 0.0f;
-	line.y2 = 0.0f;
+	line.p1 = {0.0f, 0.0f};
+	line.p2 = {0.0f, 0.0f};
 	drawLine(canvas, line, color);
 }
 
